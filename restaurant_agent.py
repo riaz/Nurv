@@ -110,6 +110,7 @@ def generate_agent_menu(client: genai.Client, theme: str) -> str:
         interaction = client.interactions.create(
             agent="antigravity-preview-05-2026",
             input=prompt,
+            # environment="remote"
         )
 
         # Extract output from interaction steps or fallback text

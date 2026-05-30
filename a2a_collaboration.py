@@ -28,7 +28,7 @@ def get_client() -> genai.Client:
 
 
 class WeatherAgent:
-    """Agent that returns hardcoded weather information for specific cities in JSON format."""
+    """Agent that handles A2A standard JSON-RPC 2.0 requests for weather info."""
 
     SYSTEM_INSTRUCTION = """
     You are a Weather Agent. You have access to hardcoded weather information for the following cities:
@@ -60,24 +60,65 @@ class WeatherAgent:
             ),
         )
 
-    def get_weather(self, city: str) -> dict:
-        print(f"[WeatherAgent] Processing weather query for: '{city}'...")
-        prompt = f"What is the weather in {city}?"
-        response = self.chat.send_message(prompt)
+    def _make_error_response(self, message: str, req_id) -> dict:
+        return {
+            "jsonrpc": "2.0",
+            "error": {"code": -32603, "message": message},
+            "id": req_id,
+        }
+
+    def handle_a2a_request(self, payload: dict) -> dict:
+        """Handle incoming A2A tasks/send JSON-RPC request."""
+        req_id = payload.get("id")
+        if payload.get("jsonrpc") != "2.0" or payload.get("method") != "tasks/send":
+            return self._make_error_response(
+                "Invalid or unsupported JSON-RPC request", req_id
+            )
+
+        params = payload.get("params", {})
+        task_id = params.get("taskId")
+        message = params.get("message", {})
+        parts = message.get("parts", [])
+
+        # Extract prompt text from parts
+        prompt_text = ""
+        for part in parts:
+            if part.get("type") == "text":
+                prompt_text += part.get("text", "") + "\n"
+
+        if not prompt_text:
+            return self._make_error_response(
+                "No text part provided in request parameters", req_id
+            )
+
+        print(
+            f"[WeatherAgent] Received A2A tasks/send request (TaskId: {task_id}). Processing..."
+        )
+
+        # Call Gemini model
+        response = self.chat.send_message(prompt_text)
 
         try:
-            # Clean up potential markdown formatting
-            text = response.text.strip().replace("```json", "").replace("```", "")
-            return json.loads(text)
+            # Parse output
+            result_text = (
+                response.text.strip().replace("```json", "").replace("```", "")
+            )
+            json_data = json.loads(result_text)
         except Exception as e:
-            return {
-                "error": f"Failed to parse Weather Agent response: {e}",
-                "raw_response": response.text,
-            }
+            json_data = {"error": f"Failed to parse weather: {e}", "raw": response.text}
+
+        # Formulate formal A2A response task object
+        result = {
+            "id": task_id,
+            "status": {"state": "completed", "timestamp": "2026-05-30T22:50:00Z"},
+            "messages": [{"role": "agent", "content": json.dumps(json_data)}],
+        }
+
+        return {"jsonrpc": "2.0", "result": result, "id": req_id}
 
 
 class CurrencyAgent:
-    """Agent that performs currency exchange calculations and applies surcharges based on weather."""
+    """Agent that handles A2A standard JSON-RPC 2.0 requests for currency exchange calculations."""
 
     SYSTEM_INSTRUCTION = """
     You are a Currency Exchange Agent. You have access to the following exchange rates:
@@ -113,30 +154,68 @@ class CurrencyAgent:
             ),
         )
 
-    def calculate_cost(self, original_query: str, weather_report: dict) -> dict:
-        print(
-            f"[CurrencyAgent] Calculating cost based on weather report: {weather_report}..."
-        )
-        prompt = f"""
-        User Request: {original_query}
-        Weather Report: {json.dumps(weather_report)}
+    def _make_error_response(self, message: str, req_id) -> dict:
+        return {
+            "jsonrpc": "2.0",
+            "error": {"code": -32603, "message": message},
+            "id": req_id,
+        }
 
-        Calculate the total cost and convert it to USD.
-        """
-        response = self.chat.send_message(prompt)
+    def handle_a2a_request(self, payload: dict) -> dict:
+        """Handle incoming A2A tasks/send JSON-RPC request."""
+        req_id = payload.get("id")
+        if payload.get("jsonrpc") != "2.0" or payload.get("method") != "tasks/send":
+            return self._make_error_response(
+                "Invalid or unsupported JSON-RPC request", req_id
+            )
+
+        params = payload.get("params", {})
+        task_id = params.get("taskId")
+        message = params.get("message", {})
+        parts = message.get("parts", [])
+
+        # Extract inputs from parts (e.g., query + weather info)
+        prompt_text = ""
+        for part in parts:
+            if part.get("type") == "text":
+                prompt_text += part.get("text", "") + "\n"
+
+        if not prompt_text:
+            return self._make_error_response(
+                "No text part provided in request parameters", req_id
+            )
+
+        print(
+            f"[CurrencyAgent] Received A2A tasks/send request (TaskId: {task_id}). Processing..."
+        )
+
+        # Call Gemini model
+        response = self.chat.send_message(prompt_text)
 
         try:
-            text = response.text.strip().replace("```json", "").replace("```", "")
-            return json.loads(text)
+            # Parse output
+            result_text = (
+                response.text.strip().replace("```json", "").replace("```", "")
+            )
+            json_data = json.loads(result_text)
         except Exception as e:
-            return {
-                "error": f"Failed to parse Currency Agent response: {e}",
-                "raw_response": response.text,
+            json_data = {
+                "error": f"Failed to parse calculation: {e}",
+                "raw": response.text,
             }
+
+        # Formulate formal A2A response task object
+        result = {
+            "id": task_id,
+            "status": {"state": "completed", "timestamp": "2026-05-30T22:50:02Z"},
+            "messages": [{"role": "agent", "content": json.dumps(json_data)}],
+        }
+
+        return {"jsonrpc": "2.0", "result": result, "id": req_id}
 
 
 class A2AOrchestrator:
-    """Orchestrates Agent-to-Agent collaboration between WeatherAgent and CurrencyAgent."""
+    """Orchestrates Agent-to-Agent collaboration between WeatherAgent and CurrencyAgent using A2A JSON-RPC 2.0."""
 
     def __init__(self, client: genai.Client):
         self.client = client
@@ -146,28 +225,80 @@ class A2AOrchestrator:
     def process(self, query: str, city: str) -> dict:
         print(f"\n[Orchestrator] Starting A2A collaboration for query: '{query}'")
 
-        # Step 1: Query the WeatherAgent
-        weather_info = self.weather_agent.get_weather(city)
-        print(f"[Orchestrator] WeatherAgent returned: {weather_info}")
+        # 1. Format JSON-RPC tasks/send for Weather Agent
+        weather_request = {
+            "jsonrpc": "2.0",
+            "method": "tasks/send",
+            "params": {
+                "taskId": "task-weather-001",
+                "message": {
+                    "role": "user",
+                    "parts": [
+                        {"type": "text", "text": f"What is the weather in {city}?"}
+                    ],
+                },
+            },
+            "id": 1,
+        }
 
-        if "error" in weather_info:
-            return {"error": "WeatherAgent failed", "details": weather_info}
+        print("\n--- SENDING TO WEATHER AGENT (A2A JSON-RPC Request) ---")
+        print(json.dumps(weather_request, indent=2))
 
-        # Step 2: Pass original query and weather report to CurrencyAgent
-        calculation_result = self.currency_agent.calculate_cost(query, weather_info)
-        print(f"[Orchestrator] CurrencyAgent returned: {calculation_result}")
+        # Invoke Weather Agent via handle_a2a_request
+        weather_response = self.weather_agent.handle_a2a_request(weather_request)
 
-        # Step 3: Combine results
+        print("\n--- RECEIVED FROM WEATHER AGENT (A2A JSON-RPC Response) ---")
+        print(json.dumps(weather_response, indent=2))
+
+        if "error" in weather_response:
+            return {
+                "error": "WeatherAgent A2A communication failed",
+                "details": weather_response,
+            }
+
+        # Extract weather report payload from the response message content
+        weather_message_content = weather_response["result"]["messages"][0]["content"]
+
+        # 2. Format JSON-RPC tasks/send for Currency Agent containing original query and weather report
+        currency_request = {
+            "jsonrpc": "2.0",
+            "method": "tasks/send",
+            "params": {
+                "taskId": "task-currency-002",
+                "message": {
+                    "role": "user",
+                    "parts": [
+                        {"type": "text", "text": f"User Request: {query}"},
+                        {
+                            "type": "text",
+                            "text": f"Weather Condition Report: {weather_message_content}",
+                        },
+                    ],
+                },
+            },
+            "id": 2,
+        }
+
+        print("\n--- SENDING TO CURRENCY AGENT (A2A JSON-RPC Request) ---")
+        print(json.dumps(currency_request, indent=2))
+
+        # Invoke Currency Agent via handle_a2a_request
+        currency_response = self.currency_agent.handle_a2a_request(currency_request)
+
+        print("\n--- RECEIVED FROM CURRENCY AGENT (A2A JSON-RPC Response) ---")
+        print(json.dumps(currency_response, indent=2))
+
         return {
             "query": query,
-            "weather_report": weather_info,
-            "calculation_result": calculation_result,
+            "city": city,
+            "weather_response": weather_response,
+            "currency_response": currency_response,
         }
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Agent-to-Agent (A2A) Collaboration Runner"
+        description="A2A JSON-RPC 2.0 Collaboration Runner"
     )
     parser.add_argument(
         "--query",
@@ -190,9 +321,20 @@ def main():
     result = orchestrator.process(args.query, args.city)
 
     print("\n==========================================")
-    print("A2A COLLABORATION RESULT")
+    print("A2A COLLABORATION COMPLETED")
     print("==========================================")
-    print(json.dumps(result, indent=2))
+
+    try:
+        # Extract and print the final calculation result cleanly
+        currency_content_str = result["currency_response"]["result"]["messages"][0][
+            "content"
+        ]
+        currency_content = json.loads(currency_content_str)
+        print("\nFinal Cost Calculation:")
+        print(json.dumps(currency_content, indent=2))
+    except Exception as e:
+        print(f"Error outputting final result summary: {e}")
+
     print("==========================================\n")
 
 

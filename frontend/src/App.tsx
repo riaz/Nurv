@@ -1,4 +1,4 @@
-
+import { useEffect } from 'react'
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
@@ -6,6 +6,11 @@ import ProjectView from './pages/ProjectView'
 import './index.css'
 
 function App() {
+  useEffect(() => {
+    // Force dark mode
+    document.documentElement.classList.add('dark')
+  }, [])
+
   return (
     <Router>
       <Routes>

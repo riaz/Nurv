@@ -4,14 +4,22 @@
 
 Nurv is a platform that allows you to build, run, and share serverless AI agents via the Google GenAI Managed Agents API. It enables building and orchestrating reusable Managed Agents entirely via prompts, complete with social features to share and discover agents. It treats agents as modular, reusable components, making it incredibly simple to orchestrate and share complex agentic workflows.
 
+### Screenshots
+
+![Dashboard Configuration](1.png)
+
+![Chat Interface](2.png)
+
 ## 🚀 Key Features
 
 - **Prompt-Based Orchestration:** Build, configure, and orchestrate serverless agents using intuitive natural language prompts without managing complex infrastructure.
 - **Advanced Interactions API:** Makes use of the robust Interactions API that natively supports multi-turn conversations, token-by-token streaming, and the ability to easily attach files or external tools.
 - **Seamless Integrations:** The Interactions API makes communication between agents, foundational models, and agentic protocols (like Agent-to-Agent or A2A) completely seamless.
 - **Socials & Agent Reusability:** Share your agents with other users and groups. Discover and reuse agents created by the community, just like downloading packages from PyPI.
-- **Stateful Memory:** Multi-turn interactions are persisted remotely in sandbox environments, maintaining deep context across sessions.
+- **Stateful Memory & Chat Sessions:** Multi-turn interactions are persisted remotely in sandbox environments. Create multiple isolated conversation threads (Chat Sessions) per project to maintain deep context across distinct workflows.
+- **Premium Dark Mode UI:** A gorgeous, professional dark mode interface featuring glassmorphism, responsive sidebars, interactive citations, and sleek dynamic message bubbles.
 - **Real-time Streaming:** Built-in Server-Sent Events (SSE) support for ultra-low latency, token-by-token streaming responses.
+- **Automated Logo Generation:** Automatically generates beautiful, scalable vector (SVG) app logos for your agents using Gemini.
 
 ## 🏗️ Architecture
 
@@ -58,6 +66,5 @@ Nurv is built using a modern, containerized stack designed for rapid development
 
 ## 🔮 Future Roadmap
 
-- Automated AI logo generation for agent projects.
 - Agent registry for discovering and cloning public agents.
 - Advanced A2A (Agent-to-Agent) orchestration pipelines.

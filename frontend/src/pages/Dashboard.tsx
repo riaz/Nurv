@@ -9,7 +9,21 @@ export default function Dashboard() {
   const [projects, setProjects] = useState<any[]>([])
   const [newProjectName, setNewProjectName] = useState("")
   const [initialPrompt, setInitialPrompt] = useState("")
+  const [selectedTools, setSelectedTools] = useState<string[]>([])
+  const [multiAgent, setMultiAgent] = useState(false)
   const navigate = useNavigate()
+
+  const AVAILABLE_TOOLS = [
+    "code_execution",
+    "google_search",
+    "url_context"
+  ]
+
+  const toggleTool = (tool: string) => {
+    setSelectedTools(prev =>
+      prev.includes(tool) ? prev.filter(t => t !== tool) : [...prev, tool]
+    )
+  }
 
   useEffect(() => {
     fetchProjects()
@@ -45,19 +59,30 @@ export default function Dashboard() {
 
     const token = localStorage.getItem("token")
     try {
+      const parsedConfig = {
+        tools: selectedTools.length > 0 ? selectedTools : undefined,
+        multi_agent: multiAgent
+      }
+
       const res = await fetch(`${import.meta.env.VITE_API_URL}/api/projects`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`
         },
-        body: JSON.stringify({ name: newProjectName, initial_prompt: initialPrompt || null })
+        body: JSON.stringify({
+          name: newProjectName,
+          initial_prompt: initialPrompt || null,
+          agent_config: parsedConfig
+        })
       })
       if (res.ok) {
         const data = await res.json()
         setProjects([...projects, data])
         setNewProjectName("")
         setInitialPrompt("")
+        setSelectedTools([])
+        setMultiAgent(false)
         navigate(`/project/${data.id}`)
       }
     } catch (err) {
@@ -108,7 +133,11 @@ export default function Dashboard() {
                     <Card key={p.id} className="cursor-pointer hover:border-primary/50 transition-colors shadow-sm" onClick={() => navigate(`/project/${p.id}`)}>
                       <CardHeader className="p-4">
                         <CardTitle className="text-lg flex items-center gap-2">
-                          <FolderKanban className="h-4 w-4 text-primary" />
+                          {p.logo_url ? (
+                            <img src={p.logo_url.startsWith('http') ? p.logo_url : `${import.meta.env.VITE_API_URL}${p.logo_url}`} alt="Project Logo" className="h-6 w-6 rounded-sm object-cover" />
+                          ) : (
+                            <FolderKanban className="h-4 w-4 text-primary" />
+                          )}
                           {p.name}
                         </CardTitle>
                         <CardDescription>Managed Agent Project</CardDescription>
@@ -139,6 +168,43 @@ export default function Dashboard() {
                     onChange={(e) => setInitialPrompt(e.target.value)}
                     className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                   />
+
+                  <div className="space-y-3 pt-2">
+                    <div className="text-sm font-medium text-foreground">Agent Capabilities</div>
+
+                    <label className="flex items-center gap-2 text-sm cursor-pointer hover:bg-muted/50 p-2 rounded-md transition-colors border">
+                      <input
+                        type="checkbox"
+                        checked={multiAgent}
+                        onChange={(e) => setMultiAgent(e.target.checked)}
+                        className="rounded border-input text-primary focus:ring-primary h-4 w-4"
+                      />
+                      <div className="flex flex-col">
+                        <span className="font-semibold">Multi-Agent Mode</span>
+                        <span className="text-xs text-muted-foreground">Allow agent to spawn sub-agents for complex tasks.</span>
+                      </div>
+                    </label>
+
+                    <div className="space-y-2">
+                      <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">MCP Tools</div>
+                      <div className="flex flex-wrap gap-2">
+                        {AVAILABLE_TOOLS.map(tool => (
+                          <button
+                            key={tool}
+                            type="button"
+                            onClick={() => toggleTool(tool)}
+                            className={`px-3 py-1.5 text-xs font-medium rounded-full border transition-all ${
+                              selectedTools.includes(tool)
+                                ? "bg-primary text-primary-foreground border-primary shadow-sm"
+                                : "bg-card text-muted-foreground hover:bg-muted border-border"
+                            }`}
+                          >
+                            {tool}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
                 </CardContent>
                 <div className="flex items-center p-6 pt-0">
                   <Button className="w-full" type="submit" disabled={!newProjectName.trim()}>

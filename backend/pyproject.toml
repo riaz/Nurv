@@ -13,4 +13,5 @@ dependencies = [
     "passlib[bcrypt]",
     "python-multipart",
     "python-jose[cryptography]",
+    "requests",
 ]

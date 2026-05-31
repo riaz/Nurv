@@ -67,6 +67,58 @@ def get_project_sessions(
     )
 
 
+@router.get("/projects/{project_id}/sandbox-files")
+def download_sandbox_files(
+    project_id: int,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from fastapi.responses import Response
+    import requests
+
+    project = (
+        db.query(models.Project)
+        .filter(
+            models.Project.id == project_id, models.Project.owner_id == current_user.id
+        )
+        .first()
+    )
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    env_id = project.environment_id
+    if not env_id:
+        raise HTTPException(
+            status_code=404, detail="No sandbox environment found for this project."
+        )
+
+    # env_id format usually "environments/12345" or just "12345"
+    if env_id.startswith("environments/"):
+        env_id = env_id.split("/")[-1]
+
+    api_key = os.environ.get("GEMINI_API_KEY")
+    response = requests.get(
+        f"https://generativelanguage.googleapis.com/v1beta/files/environment-{env_id}:download",
+        params={"alt": "media"},
+        headers={"x-goog-api-key": api_key},
+        allow_redirects=True,
+    )
+
+    if response.status_code != 200:
+        raise HTTPException(
+            status_code=response.status_code,
+            detail=f"Failed to download sandbox files: {response.text}",
+        )
+
+    return Response(
+        content=response.content,
+        media_type="application/x-tar",
+        headers={
+            "Content-Disposition": f'attachment; filename="sandbox-{project_id}.tar"'
+        },
+    )
+
+
 @router.post("/projects/{project_id}/sessions", response_model=schemas.ChatSession)
 def create_project_session(
     project_id: int,

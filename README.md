@@ -10,6 +10,8 @@ Nurv is a platform that allows you to build, run, and share serverless AI agents
 
 ![Chat Interface](images/2.png)
 
+![Agent Flow](images/3.png)
+
 ## 🚀 Key Features
 
 - **Prompt-Based Orchestration:** Build, configure, and orchestrate serverless agents using intuitive natural language prompts without managing complex infrastructure.

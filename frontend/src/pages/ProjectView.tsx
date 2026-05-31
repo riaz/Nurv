@@ -12,8 +12,35 @@ export default function ProjectView() {
   const [messages, setMessages] = useState<any[]>([])
   const [input, setInput] = useState("")
   const [loading, setLoading] = useState(false)
-  const [useStream, setUseStream] = useState(false)
+  const [useStream, setUseStream] = useState(true)
   const scrollRef = useRef<HTMLDivElement>(null)
+  const initializedProjectId = useRef<string | null>(null)
+
+  useEffect(() => {
+    fetchProject()
+  }, [id])
+
+  const fetchProject = async () => {
+    const token = localStorage.getItem("token")
+    if (!token) return
+
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/projects/${id}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      if (res.ok) {
+        const data = await res.json()
+
+        // Auto-initialize if needed
+        if (data.initial_prompt && !data.latest_interaction_id && initializedProjectId.current !== id) {
+          initializedProjectId.current = id
+          sendMessage(data.initial_prompt)
+        }
+      }
+    } catch (err) {
+      console.error(err)
+    }
+  }
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -27,7 +54,10 @@ export default function ProjectView() {
 
     const prompt = input
     setInput("")
+    await sendMessage(prompt)
+  }
 
+  const sendMessage = async (prompt: string) => {
     // Add user message and a temporary loading agent message
     setMessages(prev => [...prev, { role: "user", content: prompt }])
 

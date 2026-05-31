@@ -8,6 +8,7 @@ import { Plus, FolderKanban, LogOut } from "lucide-react"
 export default function Dashboard() {
   const [projects, setProjects] = useState<any[]>([])
   const [newProjectName, setNewProjectName] = useState("")
+  const [initialPrompt, setInitialPrompt] = useState("")
   const navigate = useNavigate()
 
   useEffect(() => {
@@ -50,12 +51,13 @@ export default function Dashboard() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`
         },
-        body: JSON.stringify({ name: newProjectName })
+        body: JSON.stringify({ name: newProjectName, initial_prompt: initialPrompt || null })
       })
       if (res.ok) {
         const data = await res.json()
         setProjects([...projects, data])
         setNewProjectName("")
+        setInitialPrompt("")
         navigate(`/project/${data.id}`)
       }
     } catch (err) {
@@ -125,11 +127,17 @@ export default function Dashboard() {
                 <CardDescription>Spin up a new managed agent.</CardDescription>
               </CardHeader>
               <form onSubmit={handleCreateProject}>
-                <CardContent>
+                <CardContent className="space-y-4">
                   <Input
                     placeholder="Project Name"
                     value={newProjectName}
                     onChange={(e) => setNewProjectName(e.target.value)}
+                  />
+                  <textarea
+                    placeholder="Initial Agent Prompt / Instructions (Optional)"
+                    value={initialPrompt}
+                    onChange={(e) => setInitialPrompt(e.target.value)}
+                    className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                   />
                 </CardContent>
                 <div className="flex items-center p-6 pt-0">

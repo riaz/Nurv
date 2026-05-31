@@ -25,6 +25,24 @@ def get_projects(
     )
 
 
+@router.get("/projects/{project_id}", response_model=schemas.Project)
+def get_project(
+    project_id: int,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    project = (
+        db.query(models.Project)
+        .filter(
+            models.Project.id == project_id, models.Project.owner_id == current_user.id
+        )
+        .first()
+    )
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    return project
+
+
 @router.post("/projects", response_model=schemas.Project)
 def create_project(
     project: schemas.ProjectCreate,
@@ -73,6 +91,10 @@ def chat_with_agent(
 
         if project.latest_interaction_id:
             kwargs["previous_interaction_id"] = project.latest_interaction_id
+        else:
+            kwargs["system_instruction"] = (
+                "Be extremely brief. Acknowledge this initialization by saying exactly: 'Agent was created that can do [brief 5-word summary of capabilities based on the prompt].'"
+            )
 
         if payload.stream:
             interaction_stream = client.interactions.create(**kwargs)

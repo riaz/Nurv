@@ -19,6 +19,7 @@ class User(UserBase):
 
 class ProjectBase(BaseModel):
     name: str
+    initial_prompt: Optional[str] = None
 
 
 class ProjectCreate(ProjectBase):
@@ -30,6 +31,7 @@ class Project(ProjectBase):
     owner_id: int
     environment_id: Optional[str] = None
     latest_interaction_id: Optional[str] = None
+    initial_prompt: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -48,4 +50,4 @@ class AgentPrompt(BaseModel):
     prompt: str
     conversation_id: Optional[str] = None
     project_id: int
-    stream: bool = False
+    stream: bool = True

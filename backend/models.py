@@ -20,5 +20,6 @@ class Project(Base):
     owner_id = Column(Integer, ForeignKey("users.id"))
     environment_id = Column(String, nullable=True)
     latest_interaction_id = Column(String, nullable=True)
+    initial_prompt = Column(String, nullable=True)
 
     owner = relationship("User", back_populates="projects")

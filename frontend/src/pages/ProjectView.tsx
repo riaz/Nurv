@@ -3,6 +3,8 @@ import { useParams, useNavigate } from "react-router-dom"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ArrowLeft, Send, Bot, User, Loader2 } from "lucide-react"
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 
 export default function ProjectView() {
   const { id } = useParams()
@@ -10,6 +12,7 @@ export default function ProjectView() {
   const [messages, setMessages] = useState<any[]>([])
   const [input, setInput] = useState("")
   const [loading, setLoading] = useState(false)
+  const [useStream, setUseStream] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -27,6 +30,12 @@ export default function ProjectView() {
 
     // Add user message and a temporary loading agent message
     setMessages(prev => [...prev, { role: "user", content: prompt }])
+
+    if (useStream) {
+      // Add placeholder for agent response
+      setMessages(prev => [...prev, { role: "agent", content: "", isStreaming: true }])
+    }
+
     setLoading(true)
 
     const token = localStorage.getItem("token")
@@ -40,19 +49,62 @@ export default function ProjectView() {
         },
         body: JSON.stringify({
           prompt,
-          project_id: parseInt(id || "0")
+          project_id: parseInt(id || "0"),
+          stream: useStream
         })
       })
 
       if (!res.ok) {
-        const errorData = await res.json()
+        const errorData = await res.json().catch(() => ({}))
         throw new Error(errorData.detail || "Failed to fetch response")
       }
 
-      const data = await res.json()
+      if (useStream) {
+        if (!res.body) throw new Error("No response body")
+        const reader = res.body.getReader()
+        const decoder = new TextDecoder("utf-8")
+        let done = false
 
-      // Add the final response from the managed agent
-      setMessages(prev => [...prev, { role: "agent", content: data.output }])
+        while (!done) {
+          const { value, done: readerDone } = await reader.read()
+          done = readerDone
+          if (value) {
+            const chunk = decoder.decode(value)
+            const lines = chunk.split("\n\n").filter(l => l.startsWith("data: "))
+
+            for (const line of lines) {
+              try {
+                const data = JSON.parse(line.replace("data: ", ""))
+                if (data.type === "token") {
+                  setMessages(prev => {
+                    const newMessages = [...prev]
+                    const lastMessage = newMessages[newMessages.length - 1]
+                    if (lastMessage && lastMessage.role === "agent" && lastMessage.isStreaming) {
+                      lastMessage.content += data.content
+                    }
+                    return newMessages
+                  })
+                } else if (data.type === "done" || data.type === "error") {
+                  setMessages(prev => {
+                    const newMessages = [...prev]
+                    const lastMessage = newMessages[newMessages.length - 1]
+                    if (lastMessage && lastMessage.role === "agent") {
+                      lastMessage.isStreaming = false
+                      if (data.type === "error") lastMessage.error = data.message
+                    }
+                    return newMessages
+                  })
+                }
+              } catch (e) {
+                console.error("Error parsing stream chunk", line)
+              }
+            }
+          }
+        }
+      } else {
+        const data = await res.json()
+        setMessages(prev => [...prev, { role: "agent", content: data.output }])
+      }
 
     } catch (err: any) {
       console.error(err)
@@ -105,8 +157,15 @@ export default function ProjectView() {
                     </div>
                   )}
                   <div className={`rounded-2xl px-4 py-3 max-w-[85%] shadow-sm ${msg.role === "user" ? "bg-primary text-primary-foreground" : "bg-card border"}`}>
-                    <div className="whitespace-pre-wrap text-sm leading-relaxed">
-                      {msg.content}
+                    <div className="whitespace-pre-wrap text-sm leading-relaxed overflow-x-auto">
+                      {msg.role === "user" ? (
+                        msg.content
+                      ) : (
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                          {msg.content}
+                        </ReactMarkdown>
+                      )}
+                      {msg.isStreaming && <span className="inline-block w-1.5 h-4 ml-1 bg-primary/60 animate-pulse align-middle" />}
                     </div>
                     {msg.error && <p className="text-xs text-destructive mt-2">Error: {msg.error}</p>}
                   </div>
@@ -118,7 +177,7 @@ export default function ProjectView() {
                 </div>
               ))}
 
-              {loading && (
+              {loading && !useStream && (
                 <div className="flex gap-4 justify-start">
                   <div className="h-8 w-8 shrink-0 rounded-full bg-primary/20 flex items-center justify-center mt-1">
                     <Loader2 className="h-4 w-4 text-primary animate-spin" />
@@ -152,7 +211,16 @@ export default function ProjectView() {
               {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
             </Button>
           </form>
-          <div className="text-center mt-2">
+          <div className="flex items-center justify-between mt-2 px-2">
+            <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer hover:text-foreground transition-colors">
+              <input
+                type="checkbox"
+                checked={useStream}
+                onChange={(e) => setUseStream(e.target.checked)}
+                className="rounded border-muted-foreground/30"
+              />
+              Stream Response
+            </label>
             <p className="text-xs text-muted-foreground">Responses are generated by the Google GenAI managed sandbox.</p>
           </div>
         </div>

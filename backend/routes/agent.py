@@ -1,5 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
+import json
 import models
 import schemas
 from database import get_db
@@ -40,7 +42,7 @@ class AgentResponse(schemas.BaseModel):
     output: str
 
 
-@router.post("/agent/chat", response_model=AgentResponse)
+@router.post("/agent/chat")
 def chat_with_agent(
     payload: schemas.AgentPrompt,
     current_user: models.User = Depends(get_current_user),
@@ -58,7 +60,6 @@ def chat_with_agent(
         raise HTTPException(status_code=404, detail="Project not found")
 
     try:
-        # Determine the environment based on past interaction
         env = project.environment_id if project.environment_id else "remote"
 
         kwargs = {
@@ -67,19 +68,40 @@ def chat_with_agent(
             "environment": env,
         }
 
-        # If there is a previous interaction ID, attach it
+        if payload.stream:
+            kwargs["stream"] = True
+
         if project.latest_interaction_id:
             kwargs["previous_interaction_id"] = project.latest_interaction_id
 
-        # This is a blocking call to the remote managed agent sandbox
-        interaction = client.interactions.create(**kwargs)
+        if payload.stream:
+            interaction_stream = client.interactions.create(**kwargs)
 
-        # Save the updated environment and interaction IDs to the project for the next turn
-        project.environment_id = interaction.environment_id
-        project.latest_interaction_id = interaction.id
-        db.commit()
+            def generate():
+                try:
+                    for chunk in interaction_stream:
+                        if chunk.event_type == "interaction.created":
+                            project.environment_id = chunk.interaction.environment_id
+                            project.latest_interaction_id = chunk.interaction.id
+                            db.commit()
+                            yield f"data: {json.dumps({'type': 'meta', 'interaction_id': chunk.interaction.id})}\n\n"
+                        elif chunk.event_type == "step.delta":
+                            if hasattr(chunk.delta, "text") and chunk.delta.text:
+                                yield f"data: {json.dumps({'type': 'token', 'content': chunk.delta.text})}\n\n"
 
-        return AgentResponse(output=interaction.output_text)
+                    yield f"data: {json.dumps({'type': 'done'})}\n\n"
+                except Exception as e:
+                    yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+
+            return StreamingResponse(generate(), media_type="text/event-stream")
+        else:
+            interaction = client.interactions.create(**kwargs)
+
+            project.environment_id = interaction.environment_id
+            project.latest_interaction_id = interaction.id
+            db.commit()
+
+            return AgentResponse(output=interaction.output_text)
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

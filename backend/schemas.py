@@ -48,3 +48,4 @@ class AgentPrompt(BaseModel):
     prompt: str
     conversation_id: Optional[str] = None
     project_id: int
+    stream: bool = False

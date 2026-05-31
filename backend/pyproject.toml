@@ -1,0 +1,16 @@
+[project]
+name = "nurv-backend"
+version = "0.1.0"
+description = "Backend for Nurv"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "sqlalchemy",
+    "google-antigravity",
+    "pydantic",
+    "pydantic-settings",
+    "passlib[bcrypt]",
+    "python-multipart",
+    "python-jose[cryptography]",
+]

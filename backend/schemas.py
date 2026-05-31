@@ -28,6 +28,8 @@ class ProjectCreate(ProjectBase):
 class Project(ProjectBase):
     id: int
     owner_id: int
+    environment_id: Optional[str] = None
+    latest_interaction_id: Optional[str] = None
 
     class Config:
         from_attributes = True

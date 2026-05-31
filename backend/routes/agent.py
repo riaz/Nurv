@@ -1,21 +1,15 @@
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 import models
 import schemas
 from database import get_db
 from routes.auth import get_current_user
-import json
-import os
-from google.antigravity import Agent, LocalAgentConfig
+from google import genai
 
 router = APIRouter()
 
-# Directory to persist agent conversations
-AGENT_SAVE_DIR = os.path.join(
-    os.path.dirname(__file__), "..", "..", "data", "agent_states"
-)
-os.makedirs(AGENT_SAVE_DIR, exist_ok=True)
+# Initialize the genai client. It will automatically pick up GEMINI_API_KEY from the environment.
+client = genai.Client()
 
 
 @router.get("/projects", response_model=list[schemas.Project])
@@ -42,8 +36,12 @@ def create_project(
     return db_project
 
 
-@router.post("/agent/chat")
-async def chat_with_agent(
+class AgentResponse(schemas.BaseModel):
+    output: str
+
+
+@router.post("/agent/chat", response_model=AgentResponse)
+def chat_with_agent(
     payload: schemas.AgentPrompt,
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -59,25 +57,29 @@ async def chat_with_agent(
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
-    async def stream_agent_response():
-        config_kwargs = {"save_dir": AGENT_SAVE_DIR}
-        if payload.conversation_id:
-            config_kwargs["conversation_id"] = payload.conversation_id
+    try:
+        # Determine the environment based on past interaction
+        env = project.environment_id if project.environment_id else "remote"
 
-        try:
-            config = LocalAgentConfig(**config_kwargs)
-            async with Agent(config) as agent:
-                # Send the initial meta event with the conversation ID so the client can save it
-                conv_id = agent.conversation_id
-                yield f"data: {json.dumps({'type': 'meta', 'conversation_id': conv_id})}\n\n"
+        kwargs = {
+            "agent": "antigravity-preview-05-2026",
+            "input": payload.prompt,
+            "environment": env,
+        }
 
-                response = await agent.chat(payload.prompt)
-                async for token in response:
-                    # Stream tokens one by one
-                    yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
+        # If there is a previous interaction ID, attach it
+        if project.latest_interaction_id:
+            kwargs["previous_interaction_id"] = project.latest_interaction_id
 
-                yield f"data: {json.dumps({'type': 'done'})}\n\n"
-        except Exception as e:
-            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+        # This is a blocking call to the remote managed agent sandbox
+        interaction = client.interactions.create(**kwargs)
 
-    return StreamingResponse(stream_agent_response(), media_type="text/event-stream")
+        # Save the updated environment and interaction IDs to the project for the next turn
+        project.environment_id = interaction.environment_id
+        project.latest_interaction_id = interaction.id
+        db.commit()
+
+        return AgentResponse(output=interaction.output_text)
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

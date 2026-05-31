@@ -18,5 +18,7 @@ class Project(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, index=True)
     owner_id = Column(Integer, ForeignKey("users.id"))
+    environment_id = Column(String, nullable=True)
+    latest_interaction_id = Column(String, nullable=True)
 
     owner = relationship("User", back_populates="projects")

@@ -7,7 +7,7 @@ dependencies = [
     "fastapi",
     "uvicorn",
     "sqlalchemy",
-    "google-antigravity",
+    "google-genai>=0.2.0",
     "pydantic",
     "pydantic-settings",
     "passlib[bcrypt]",

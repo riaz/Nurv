@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef } from "react"
 import { useParams, useNavigate } from "react-router-dom"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-
 import { ArrowLeft, Send, Bot, User, Loader2 } from "lucide-react"
 
 export default function ProjectView() {
@@ -11,7 +10,6 @@ export default function ProjectView() {
   const [messages, setMessages] = useState<any[]>([])
   const [input, setInput] = useState("")
   const [loading, setLoading] = useState(false)
-  const [conversationId, setConversationId] = useState<string | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -26,13 +24,12 @@ export default function ProjectView() {
 
     const prompt = input
     setInput("")
+
+    // Add user message and a temporary loading agent message
     setMessages(prev => [...prev, { role: "user", content: prompt }])
     setLoading(true)
 
     const token = localStorage.getItem("token")
-
-    // Add placeholder for agent response
-    setMessages(prev => [...prev, { role: "agent", content: "", isStreaming: true }])
 
     try {
       const res = await fetch(`${import.meta.env.VITE_API_URL}/api/agent/chat`, {
@@ -43,66 +40,26 @@ export default function ProjectView() {
         },
         body: JSON.stringify({
           prompt,
-          project_id: parseInt(id || "0"),
-          conversation_id: conversationId
+          project_id: parseInt(id || "0")
         })
       })
 
-      if (!res.body) throw new Error("No response body")
-
-      const reader = res.body.getReader()
-      const decoder = new TextDecoder("utf-8")
-      let done = false
-
-      while (!done) {
-        const { value, done: readerDone } = await reader.read()
-        done = readerDone
-        if (value) {
-          const chunk = decoder.decode(value)
-          const lines = chunk.split("\n\n").filter(l => l.startsWith("data: "))
-
-          for (const line of lines) {
-            try {
-              const data = JSON.parse(line.replace("data: ", ""))
-              if (data.type === "meta" && data.conversation_id) {
-                setConversationId(data.conversation_id)
-              } else if (data.type === "token") {
-                setMessages(prev => {
-                  const newMessages = [...prev]
-                  const lastMessage = newMessages[newMessages.length - 1]
-                  if (lastMessage && lastMessage.role === "agent" && lastMessage.isStreaming) {
-                    lastMessage.content += data.content
-                  }
-                  return newMessages
-                })
-              } else if (data.type === "done" || data.type === "error") {
-                setMessages(prev => {
-                  const newMessages = [...prev]
-                  const lastMessage = newMessages[newMessages.length - 1]
-                  if (lastMessage && lastMessage.role === "agent") {
-                    lastMessage.isStreaming = false
-                    if (data.type === "error") lastMessage.error = data.message
-                  }
-                  return newMessages
-                })
-              }
-            } catch (e) {
-              console.error("Error parsing stream chunk", line)
-            }
-          }
-        }
+      if (!res.ok) {
+        const errorData = await res.json()
+        throw new Error(errorData.detail || "Failed to fetch response")
       }
-    } catch (err) {
+
+      const data = await res.json()
+
+      // Add the final response from the managed agent
+      setMessages(prev => [...prev, { role: "agent", content: data.output }])
+
+    } catch (err: any) {
       console.error(err)
-      setMessages(prev => {
-        const newMessages = [...prev]
-        const lastMessage = newMessages[newMessages.length - 1]
-        if (lastMessage && lastMessage.role === "agent") {
-          lastMessage.isStreaming = false
-          lastMessage.error = "Failed to connect to agent"
-        }
-        return newMessages
-      })
+      setMessages(prev => [
+        ...prev,
+        { role: "agent", content: "", error: err.message || "Failed to connect to agent sandbox." }
+      ])
     } finally {
       setLoading(false)
     }
@@ -120,7 +77,7 @@ export default function ProjectView() {
             <Bot className="h-4 w-4 text-primary" />
           </div>
           <div>
-            <h1 className="font-semibold leading-none tracking-tight">Agent Interface</h1>
+            <h1 className="font-semibold leading-none tracking-tight">Managed Agent Sandbox</h1>
             <p className="text-xs text-muted-foreground">Project #{id}</p>
           </div>
         </div>
@@ -128,38 +85,50 @@ export default function ProjectView() {
 
       <div className="flex-1 overflow-y-auto p-4 md:p-8" ref={scrollRef}>
         <div className="max-w-3xl mx-auto space-y-6">
-          {messages.length === 0 ? (
+          {messages.length === 0 && !loading ? (
             <div className="h-[40vh] flex flex-col items-center justify-center text-center space-y-4">
               <div className="h-16 w-16 rounded-2xl bg-primary/10 flex items-center justify-center">
                 <Bot className="h-8 w-8 text-primary" />
               </div>
               <div className="max-w-sm">
                 <h2 className="text-2xl font-semibold">How can I help?</h2>
-                <p className="text-muted-foreground mt-2">Enter a prompt below to interact with your managed agent.</p>
+                <p className="text-muted-foreground mt-2">Enter a prompt below. It will be sent to your remote sandbox agent.</p>
               </div>
             </div>
           ) : (
-            messages.map((msg, idx) => (
-              <div key={idx} className={`flex gap-4 ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-                {msg.role === "agent" && (
-                  <div className="h-8 w-8 shrink-0 rounded-full bg-primary/20 flex items-center justify-center mt-1">
-                    <Bot className="h-4 w-4 text-primary" />
+            <>
+              {messages.map((msg, idx) => (
+                <div key={idx} className={`flex gap-4 ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+                  {msg.role === "agent" && (
+                    <div className="h-8 w-8 shrink-0 rounded-full bg-primary/20 flex items-center justify-center mt-1">
+                      <Bot className="h-4 w-4 text-primary" />
+                    </div>
+                  )}
+                  <div className={`rounded-2xl px-4 py-3 max-w-[85%] shadow-sm ${msg.role === "user" ? "bg-primary text-primary-foreground" : "bg-card border"}`}>
+                    <div className="whitespace-pre-wrap text-sm leading-relaxed">
+                      {msg.content}
+                    </div>
+                    {msg.error && <p className="text-xs text-destructive mt-2">Error: {msg.error}</p>}
                   </div>
-                )}
-                <div className={`rounded-2xl px-4 py-3 max-w-[85%] shadow-sm ${msg.role === "user" ? "bg-primary text-primary-foreground" : "bg-card border"}`}>
-                  <div className="whitespace-pre-wrap text-sm leading-relaxed">
-                    {msg.content}
-                    {msg.isStreaming && <span className="inline-block w-1.5 h-4 ml-1 bg-primary/60 animate-pulse align-middle" />}
-                  </div>
-                  {msg.error && <p className="text-xs text-destructive mt-2">Error: {msg.error}</p>}
+                  {msg.role === "user" && (
+                    <div className="h-8 w-8 shrink-0 rounded-full bg-secondary flex items-center justify-center mt-1">
+                      <User className="h-4 w-4 text-secondary-foreground" />
+                    </div>
+                  )}
                 </div>
-                {msg.role === "user" && (
-                  <div className="h-8 w-8 shrink-0 rounded-full bg-secondary flex items-center justify-center mt-1">
-                    <User className="h-4 w-4 text-secondary-foreground" />
+              ))}
+
+              {loading && (
+                <div className="flex gap-4 justify-start">
+                  <div className="h-8 w-8 shrink-0 rounded-full bg-primary/20 flex items-center justify-center mt-1">
+                    <Loader2 className="h-4 w-4 text-primary animate-spin" />
                   </div>
-                )}
-              </div>
-            ))
+                  <div className="rounded-2xl px-4 py-3 max-w-[85%] shadow-sm bg-card border text-sm text-muted-foreground flex items-center gap-2">
+                    Running in remote sandbox...
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>
@@ -169,7 +138,7 @@ export default function ProjectView() {
           <form onSubmit={handleSend} className="relative flex items-center">
             <Input
               className="pr-12 py-6 rounded-full shadow-sm bg-card border-muted-foreground/20 focus-visible:ring-primary/30"
-              placeholder="Ask the agent..."
+              placeholder="Ask the managed agent..."
               value={input}
               onChange={(e) => setInput(e.target.value)}
               disabled={loading}
@@ -184,7 +153,7 @@ export default function ProjectView() {
             </Button>
           </form>
           <div className="text-center mt-2">
-            <p className="text-xs text-muted-foreground">Nurv Agents may produce inaccurate information.</p>
+            <p className="text-xs text-muted-foreground">Responses are generated by the Google GenAI managed sandbox.</p>
           </div>
         </div>
       </div>
